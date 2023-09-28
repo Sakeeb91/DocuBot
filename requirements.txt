@@ -1,7 +1,6 @@
 langchain
 PyPDF2
 streamlit
-python-poppler
 Pillow
 PyMuPDF
 # uncomment to use huggingface llms
