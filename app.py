@@ -1,98 +1,55 @@
-import streamlit as st
-from dotenv import load_dotenv
-from PyPDF2 import PdfReader
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings, HuggingFaceInstructEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chat_models import ChatOpenAI
-from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
-from htmlTemplates import css, bot_template, user_template
-from langchain.llms import HuggingFaceHub
+from langchain.memory import ConversationBufferMemory
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings.openai import OpenAIEmbeddings
+from PyPDF2 import PdfReader
+import streamlit as st
+import os
+import fitz
+from PIL import Image
 
-def get_pdf_text(pdf_docs):
+st.title("PDF Chatbot")
+
+def process_pdf(file_path):
+    pdf_reader = PdfReader(file_path)
     text = ""
-    for pdf in pdf_docs:
-        pdf_reader = PdfReader(pdf)
-        for page in pdf_reader.pages:
-            text += page.extract_text()
+    for page in pdf_reader.pages:
+        text += page.extract_text()
     return text
 
-
-def get_text_chunks(text):
-    text_splitter = CharacterTextSplitter(
-        separator="\n",
-        chunk_size=1000,
-        chunk_overlap=200,
-        length_function=len
-    )
-    chunks = text_splitter.split_text(text)
-    return chunks
-
-
-def get_vectorstore(text_chunks):
-    embeddings = OpenAIEmbeddings()
-    # embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl")
-    vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
-    return vectorstore
-
-
-def get_conversation_chain(vectorstore, prompt):
-    llm = ChatOpenAI(temperature=0)  # Adjust temperature if needed
-    conversation_chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=vectorstore.as_retriever(),
-        combine_docs_chain_kwargs={"prompt": prompt}
-    )
-    return conversation_chain
-
-
-
-def handle_userinput(user_question):
-    response = st.session_state.conversation.process({'question': user_question})
-    st.session_state.chat_history = response['chat_history']
-
-    for i, message in enumerate(st.session_state.chat_history):
-        if i % 2 == 0:
-            st.write(user_template.replace(
-                "{{MSG}}", message.content), unsafe_allow_html=True)
-        else:
-            st.write(bot_template.replace(
-                "{{MSG}}", message.content), unsafe_allow_html=True)
-
+def generate_response(chain, history, query):
+    result = chain(
+        {"question": query, 'chat_history': history}, return_only_outputs=True)
+    return result["answer"]
 
 def main():
-    load_dotenv()
-    st.set_page_config(page_title="Chat with multiple PDFs",
-                       page_icon=":books:")
-    st.write(css, unsafe_allow_html=True)
+    st.write("Provide your OpenAI API Key:")
+    api_key = st.text_input("OpenAI API Key:", type="password")  # Creates a password input box for the API key
 
-    if "conversation" not in st.session_state:
-        st.session_state.conversation = None
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = None
+    if api_key:  # Checks if api_key is not empty
+        os.environ['OPENAI_API_KEY'] = api_key  # Sets the API key from user input
+        st.write("Upload a PDF file:")
+        pdf_file = st.file_uploader("Choose a PDF file", type="pdf")
+        query = st.text_input("Enter a question:", "")
 
-    st.header("Chat with multiple PDFs :books:")
-    user_question = st.text_input("Ask a question about your documents:")
-    if user_question:
-        handle_userinput(user_question)
-
-    with st.sidebar:
-        st.subheader("Your documents")
-        pdf_docs = st.file_uploader(
-            "Upload your PDFs here and click on 'Process'", accept_multiple_files=True)
-        if st.button("Process"):
-            with st.spinner("Processing"):
-                # get pdf text
-                raw_text = get_pdf_text(pdf_docs)
-                # get the text chunks
-                text_chunks = get_text_chunks(raw_text)
-                # create vector store
-                vectorstore = get_vectorstore(text_chunks)
-                # create conversation chain
-                prompt = "Answer the following question based on the provided documents: "
-                st.session_state.conversation = get_conversation_chain(vectorstore, prompt)
-
+        if pdf_file is not None:
+            text = process_pdf(pdf_file)
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            chunks = splitter.split_text(text)
+            embeddings = OpenAIEmbeddings()
+            vectorstore = FAISS.from_texts(texts=chunks, embedding=embeddings)
+            memory = ConversationBufferMemory(memory_key='chat_history', return_messages=True)
+            chain = ConversationalRetrievalChain.from_llm(ChatOpenAI(temperature=0.3),
+                                                         retriever=vectorstore.as_retriever(),
+                                                         memory=memory)
+            history = []
+            for chunk in chunks:
+                response = generate_response(chain, history, chunk)
+                history.append(chunk)
+                history.append(response)
+                st.write(response)
 
 if __name__ == '__main__':
     main()
