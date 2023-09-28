@@ -37,22 +37,19 @@ def get_vectorstore(text_chunks):
     return vectorstore
 
 
-def get_conversation_chain(vectorstore):
-    llm = ChatOpenAI()
-    # llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
-
-    memory = ConversationBufferMemory(
-        memory_key='chat_history', return_messages=True)
+def get_conversation_chain(vectorstore, prompt):
+    llm = ChatOpenAI(temperature=0)  # Adjust temperature if needed
     conversation_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=vectorstore.as_retriever(),
-        memory=memory
+        combine_docs_chain_kwargs={"prompt": prompt}
     )
     return conversation_chain
 
 
+
 def handle_userinput(user_question):
-    response = st.session_state.conversation({'question': user_question})
+    response = st.session_state.conversation.process({'question': user_question})
     st.session_state.chat_history = response['chat_history']
 
     for i, message in enumerate(st.session_state.chat_history):
@@ -88,16 +85,13 @@ def main():
             with st.spinner("Processing"):
                 # get pdf text
                 raw_text = get_pdf_text(pdf_docs)
-
                 # get the text chunks
                 text_chunks = get_text_chunks(raw_text)
-
                 # create vector store
                 vectorstore = get_vectorstore(text_chunks)
-
                 # create conversation chain
-                st.session_state.conversation = get_conversation_chain(
-                    vectorstore)
+                prompt = "Answer the following question based on the provided documents: "
+                st.session_state.conversation = get_conversation_chain(vectorstore, prompt)
 
 
 if __name__ == '__main__':
