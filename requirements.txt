@@ -2,3 +2,6 @@ streamlit
 PyPDF2
 faiss-gpu
 python-dotenv
+langchain
+htmlTemplates
+faiss-cpu

@@ -83,7 +83,34 @@ def main():
     st.header("Chat with multiple PDFs :books:")
     user_question = st.text_input("Ask a question about your documents:")
 
-    # ... (omitted code for PDF upload and model selection)
+    # code for PDF upload and model selection
+
+    pdf_docs = st.file_uploader("Upload your PDFs", type=["pdf"], accept_multiple_files=True)
+    if pdf_docs:
+        text = get_pdf_text(pdf_docs)
+        text_chunks = get_text_chunks(text)
+        embedding_model = st.selectbox("Choose an embedding model", ["OpenAI", "HuggingFace"])
+        vectorstore = get_vectorstore(text_chunks, embedding_model)
+        conversational_model = st.selectbox("Choose a conversational model", ["OpenAI", "HuggingFace"])
+        model_temperature = st.slider("Choose a model temperature", min_value=0.0, max_value=1.0, value=0.5, step=0.1)
+        conversation_chain = get_conversation_chain(vectorstore, conversational_model, model_temperature)
+        st.session_state.conversation = conversation_chain
+        st.session_state.chat_history = None
+        st.write("You can now ask questions about your documents.")
+
+    # code for chat history display
+    if st.session_state.chat_history:
+        for i, message in enumerate(st.session_state.chat_history):
+            if i % 2 == 0:
+                st.write(user_template.replace(
+                    "{{MSG}}", message.content), unsafe_allow_html=True)
+            else:
+                st.write(bot_template.replace(
+                    "{{MSG}}", message.content), unsafe_allow_html=True)
+
+    # code for user input
+    if st.button("Ask"):
+        user_question = st.text_input("Ask a question about your documents:")
 
     if user_question:
         handle_userinput(user_question)
